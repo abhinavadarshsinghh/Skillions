@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>HelpDesk Mini</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f5f6fa;
+    }
+    h1, h2 { color: #333; }
+    .container {
+      max-width: 800px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    input, textarea, button {
+      display: block;
+      width: 100%;
+      margin: 10px 0;
+      padding: 8px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover { background: #0056b3; }
+    .ticket {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+    }
+    nav button {
+      width: auto;
+      display: inline-block;
+      margin-right: 10px;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <nav id="nav" class="hidden">
+    <button onclick="showPage('ticketsPage')">Tickets</button>
+    <button onclick="showPage('newTicketPage')">New Ticket</button>
+    <button onclick="logout()">Logout</button>
+  </nav>
+
+  <div id="loginPage">
+    <h1>Login</h1>
+    <input id="loginEmail" placeholder="Email">
+    <input id="loginPassword" type="password" placeholder="Password">
+    <button onclick="handleLogin()">Login</button>
+  </div>
+
+  <div id="ticketsPage" class="hidden">
+    <h1>All Tickets</h1>
+    <div id="tickets"></div>
+  </div>
+
+  <div id="newTicketPage" class="hidden">
+    <h1>Create Ticket</h1>
+    <input id="title" placeholder="Title">
+    <textarea id="description" placeholder="Description"></textarea>
+    <button onclick="submitTicket()">Submit</button>
+  </div>
+
+  <div id="ticketDetailsPage" class="hidden">
+    <h1 id="ticketTitle"></h1>
+    <p id="ticketDesc"></p>
+    <h2>Comments</h2>
+    <div id="comments"></div>
+    <textarea id="commentInput" placeholder="Add a comment"></textarea>
+    <button onclick="postComment()">Post Comment</button>
+    <button onclick="showPage('ticketsPage')">Back</button>
+  </div>
+
+</div>
+
+<script>
+const API_BASE = "http://localhost:3000/api"; 
+let currentTicketId = null;
+
+function getToken() { return localStorage.getItem("token"); }
+function authHeaders() {
+  return { "Authorization": "Bearer " + getToken(), "Content-Type": "application/json" };
+}
+async function handleLogin() {
+  const email = document.getElementById("loginEmail").value;
+  const password = document.getElementById("loginPassword").value;
+  const res = await fetch(`${API_BASE}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+  if (data.token) {
+    localStorage.setItem("token", data.token);
+    document.getElementById("loginPage").classList.add("hidden");
+    document.getElementById("nav").classList.remove("hidden");
+    showPage("ticketsPage");
+  } else {
+    alert("Login failed");
+  }
+}
+function logout() {
+  localStorage.removeItem("token");
+  location.reload();
+}
+
+function showPage(pageId) {
+  document.querySelectorAll(".container > div").forEach(div => {
+    if (div.id !== "nav") div.classList.add("hidden");
+  });
+  document.getElementById(pageId).classList.remove("hidden");
+
+  if (pageId === "ticketsPage") loadTickets();
+}
+
+async function loadTickets() {
+  const res = await fetch(`${API_BASE}/tickets?limit=20&offset=0`, { headers: authHeaders() });
+  const data = await res.json();
+  const container = document.getElementById("tickets");
+  container.innerHTML = "";
+  data.items.forEach(t => {
+    const div = document.createElement("div");
+    div.className = "ticket";
+    div.innerHTML = `<b>${t.title}</b><br>${t.description}<br>
+      <button onclick="viewTicket(${t.id})">View Details</button>`;
+    container.appendChild(div);
+  });
+}
+
+async function submitTicket() {
+  const title = document.getElementById("title").value;
+  const description = document.getElementById("description").value;
+  const res = await fetch(`${API_BASE}/tickets`, {
+    method: "POST",
+    headers: { ...authHeaders(), "Idempotency-Key": Date.now().toString() },
+    body: JSON.stringify({ title, description })
+  });
+  const data = await res.json();
+  if (data.ticket) {
+    alert("Ticket Created!");
+    showPage("ticketsPage");
+  }
+}
+
+async function viewTicket(id) {
+  currentTicketId = id;
+  const res = await fetch(`${API_BASE}/tickets/${id}`, { headers: authHeaders() });
+  const data = await res.json();
+  document.getElementById("ticketTitle").innerText = data.ticket.title;
+  document.getElementById("ticketDesc").innerText = data.ticket.description;
+  const container = document.getElementById("comments");
+  container.innerHTML = "";
+  data.comments.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "ticket";
+    div.innerText = c.content;
+    container.appendChild(div);
+  });
+  showPage("ticketDetailsPage");
+}
+
+async function postComment() {
+  const content = document.getElementById("commentInput").value;
+  const res = await fetch(`${API_BASE}/tickets/${currentTicketId}/comments`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ content })
+  });
+  const data = await res.json();
+  if (data.success) {
+    alert("Comment added");
+    viewTicket(currentTicketId);
+  }
+}
+</script>
+</body>
+</html>
